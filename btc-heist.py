@@ -7,8 +7,8 @@ import multiprocessing
 from bitcoin import sha256, privtopub, pubtoaddr
 from mnemonic import Mnemonic
 
-
-def seek(core, btc_address_queue):
+def seek(core, btc_address_queue, publist):
+    """Search for Bitcoin private keys."""
     print(f"Core {core}: Searching for Private Key...")
     mnemo = Mnemonic("english")
     log_rate_iterations = 10000
@@ -26,9 +26,8 @@ def seek(core, btc_address_queue):
             time_diff = datetime.today().timestamp() - start_time
             print(f"Core {core}: {iteration / time_diff} Key/s")
 
-
-if __name__ == "__main__":
-
+def main():
+    """Main function."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c",
@@ -60,18 +59,30 @@ if __name__ == "__main__":
     # generate list of pubkey with BTC
     print(f'Loading "{addresses_filename}"...')
     with open(addresses_filename) as f:
-        publist = frozenset(f)  # set() used for O(1) search
+        publist = set(f)  # set() used for O(1) search
     print("Loaded.")
 
     btc_address_queue = multiprocessing.Queue()
-    for core in range(cores):
-        process = multiprocessing.Process(target=seek, args=(core, btc_address_queue))
-        process.start()
+    processes = []
 
-    while True:
-        private_key, public_key, btc_address = btc_address_queue.get()
-        if f"{btc_address}\n" in publist:
-            found_key = f"\nPublic: {public_key} | Private: {private_key} | Address: {btc_address}\n"
-            print(found_key)
-            with open(keyfile, "a") as f:
-                f.write(found_key)
+    for core in range(cores):
+        process = multiprocessing.Process(target=seek, args=(core, btc_address_queue, publist))
+        process.start()
+        processes.append(process)
+
+    try:
+        while True:
+            private_key, public_key, btc_address = btc_address_queue.get()
+            if f"{btc_address}\n" in publist:
+                found_key = f"\nPublic: {public_key} | Private: {private_key} | Address: {btc_address}\n"
+                print(found_key)
+                with open(keyfile, "a") as f:
+                    f.write(found_key)
+    except KeyboardInterrupt:
+        print("Terminating processes...")
+        for process in processes:
+            process.terminate()
+            process.join()
+
+if __name__ == "__main__":
+    main()
